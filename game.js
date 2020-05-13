@@ -8,9 +8,6 @@ Last revision: 2018-10-14 (BM)
 /* jshint browser : true, devel : true, esversion : 5, freeze : true */
 /* globals PS : true */
 
-//TODO: Make Corora virus spawn and hurt the player
-//TODO: Make levels that progress in difficulty
-
 var G = ( function () {
 	//The size of the entire grid
 	var GRID_X = 20;
@@ -26,6 +23,9 @@ var G = ( function () {
 
 	//array of toilet paper
 	var TP = [];
+
+	//array of Corona
+	var C = [];
 
 	//Cart sprite
 	var sprite_cart; // sprite identifier for the cart
@@ -48,6 +48,12 @@ var G = ( function () {
 	//number of lives the player has
 	var lives = 3;
 
+	//The current level that the player is on
+	var curlevel = 0;
+
+	//The total number of TP needed to be collected for each level
+	var levelTotals = [5, 10, 15, 20, 25, 30, 36];
+
 	//cause a game over if you loose all 3 lives
 	var gameover = false;
 
@@ -64,6 +70,7 @@ var G = ( function () {
 		// Ignore TPs that hit a full cart for now
 			if (type === PS.SPRITE_OVERLAP) {
 				var i = TP.indexOf(s2); // find the colliding sprite in TP array
+				var j = C.indexOf(s2); // find the colliding sprite in Corona array
 				if (i >= 0) {
 					PS.spriteShow(TP[i], false); // simply hide the TP sprite! prevents further collisions
 					numInCart += 1; // add TP to cart
@@ -79,6 +86,7 @@ var G = ( function () {
 						// Player cart is too full
 						//PS.debug(numInCart)
 							lives -= 1;
+							changeLives(lives);
 							numInCart = 0;
 							//PS.spriteSolidColor(sprite_cart, COLORS[numInCart]);
 							PS.spriteShow(sprite_cart, false);
@@ -105,45 +113,77 @@ var G = ( function () {
 								PS.color(PS.ALL,PS.ALL, PS.COLOR_RED);
 								PS.border (PS.ALL,PS.ALL, 0);
 
-								DB.send();
-
 								PS.statusText("GAME OVER!");
 								PS.audioPlay("fx_wilhelm");
 
 							}
+					}
+					//PS.debug( "Collided! Cart contains " + numInCart + "\n" );
+				}
+				if (j >= 0) {
+					PS.spriteShow(C[j], false); // simply hide the TP sprite! prevents further collisions
+					lives -= 1;
+					changeLives(lives);
+					PS.statusText("LIFE LOST!");
+					PS.gridColor(PS.COLOR_RED);
+					PS.audioPlay("fx_blast3");
+					PS.gridFade(10);
+					PS.gridColor(PS.COLOR_WHITE);
+						//A gameover has been triggered
+						if (lives < 0) {
+							gameover = true;
+							PS.spriteShow(sprite_cart, false);
+
+							for (var i = 0; i < TP.length; i++) {
+								PS.spriteShow(TP[i], false);
+							}
+
+							PS.color(PS.ALL,PS.ALL, PS.COLOR_RED);
+							PS.border (PS.ALL,PS.ALL, 0);
+
+							PS.statusText("GAME OVER!");
+							PS.audioPlay("fx_wilhelm");
+
+						}
 
 					}
 					//PS.debug( "Collided! Cart contains " + numInCart + "\n" );
 				}
 			}
 
-	}
+
 		;
 
 	//Creates a random gray  floor
 	var draw_map = function () {
 		var x, y;
+		PS.border(PS.ALL,PS.ALL, 0);
 
 		for ( y = 0; y < GRID_Y; y += 1 ) {
 			for ( x = 0; x < GRID_X; x += 1 ) {
 				if(x > 4){
 					if((x == 5)||(x==12)||(x==19)||(y==0)||(y==5)||(y==10)||(y==15)){
+						//shelf color
 						PS.color( x, y, PS.COLOR_BLACK);
 
 					}
 					else{
-						PS.color( x, y, PS.COLOR_CYAN);
+						//building inside color
+						PS.color( x, y, 47,164,195);
 
 					}
 
 				}
 				else{
-					PS.color( x, y, PS.COLOR_GREEN);
+					//outside color
+					PS.color( x, y, 22,202,20);
 
 				}
 
 			}
 		}
+		//car color
+		var carColor;
 		PS.color(0,19, PS.COLOR_RED);
 		PS.color(1,19, PS.COLOR_RED);
 		PS.color(0,18, PS.COLOR_RED);
@@ -171,6 +211,27 @@ var G = ( function () {
 		TP.push( tp );
 	};
 
+	//Makes a toilet paper sprite and puts in an array of toilet paper
+	var makeCorona = function () {
+		if(gameover == true){
+			return;
+		}
+
+		//creates a random spot for the TP to spawn
+		var coronaX = PS.random( 19 );
+
+		//Makes sure that the Corona doesn't spawn on the car
+		if ( coronaX < 16 ) {
+			coronaX += 4;
+		}
+
+		var corona = PS.spriteSolid( 1, 1 ); // Create 1x1 solid sprite, save its ID
+		PS.spritePlane( corona, PLANE_TP ); // Set plane to 1 (above floor)
+		PS.spriteSolidColor( corona, PS.COLOR_RED );
+		PS.spriteMove( corona, coronaX, 0 );
+		C.push( corona );
+	};
+
 	//Function that moves the cart
 	var moveCart = function ( dx ) {		// First move the cart
 
@@ -184,10 +245,10 @@ var G = ( function () {
 		if ( ( nx >= 2 ) && ( nx < MAX_X ) ) {
 			cart_x = nx;
 			if ( cart_x == 2 ) {
-				PS.statusText( "L:" + lives + " " + "Press SPACE to empty your shopping cart" );
+				PS.statusText( "Press SPACE to empty your shopping cart" );
 			}
 			else {
-				PS.statusText( "L:" + lives + " " + "Catch toilet paper in cart. Max 4." );
+				PS.statusText( "Catch toilet paper in cart. Max 4." );
 			}
 			PS.spriteMove( sprite_cart, cart_x, cart_y ); // this may cause a collision!
 		}
@@ -221,14 +282,38 @@ var G = ( function () {
 		}
 	};
 
+	var moveCorona = function () {
+		if(gameover == true){
+			return;
+		}
+
+		var i, len, corona, pos, x, y;
+
+		i = 0;
+		len = C.length;
+		while ( i < len ) {
+			corona = C[ i ]; // get a corona
+			pos = PS.spriteMove( corona ); // only need to call this once
+			x = pos.x;
+			y = pos.y;
+			if ( y <= MAX_Y ) {
+				PS.spriteMove( corona, x, y + 1 );
+				i += 1; // point to next sprite
+			}
+			else {
+				PS.spriteDelete( corona ); // nuke the sprite
+				C.splice( i, 1 ); // remove its id from Corona array
+				len -= 1; // reduce size of Corona array
+			}
+		}
+	};
+
 	//Function that removes toilet paper from the shopping cart and puts it in the car
 	var remCart = function () {
 		if ( ( cart_x == 2 ) && ( numInCart >= 1 ) ) {
 			numInCart -= 1;
 			numInCar += 1;
 			drawTpInCar();
-
-			DB.send();
 
 			PS.audioPlay("fx_bloop");
 			//PS.spriteSolidColor( sprite_cart, COLORS[ numInCart ] );
@@ -239,6 +324,67 @@ var G = ( function () {
 
 			//PS.debug( numInCart + "\n" );
 		}
+	}
+
+	//Draws the initial 3 lives
+	var drawLives = function(){
+		for (var i = 0; i < 3; i++) {
+			PS.glyph(i, 0, "\u2665");
+			PS.glyphColor(i,0, PS.COLOR_RED);
+		}
+	}
+
+	//Shows the lives after they have been earsed
+	var showLives = function(){
+		for (var i = 0; i < 3; i++) {
+			PS.glyphAlpha(i, 0, 255)
+		}
+	}
+
+	//Hides the corresponding life glphy
+	var changeLives = function(lives){
+		if(lives < 0){
+			return
+		}
+		else{
+			PS.glyphAlpha(lives, 0, 0)
+		}
+	}
+	var levelComplete = function(){
+		if(curlevel < 6){
+			if( curlevel == 2){
+				PS.timerStart( 75, makeCorona );
+				PS.timerStart( 5, moveCorona );
+			}
+			PS.statusText("Level Complete!");
+			PS.audioPlay("fx_tada");
+			PS.gridColor(PS.COLOR_GREEN);
+			PS.gridFade(10);
+			PS.gridColor(PS.COLOR_WHITE);
+
+			numInCar = 0;
+			draw_map();
+
+			lives = 3;
+			showLives();
+
+			numInCart = 0;
+			PS.spriteShow(sprite_cart, false);
+			PS.imageLoad(COLORS[numInCart], loader);
+		}
+		else{
+			if(numInCar >= levelTotals[curlevel]){
+				win();
+			}
+		}
+
+	}
+
+	var drawLevelNum = function(){
+		var thisLevel = curlevel + 1
+		thisLevel = thisLevel.toString()
+		PS.glyph(0, 1, "L:");
+		PS.glyph(1, 1, thisLevel);
 	}
 
 	//Draws the TP in the car
@@ -256,8 +402,11 @@ var G = ( function () {
 		if(column == 0){
 			row += 1;
 		}
-		if(numInCar >= 36){
-			win();
+		if(numInCar >= levelTotals[curlevel]){
+			curlevel += 1;
+			levelComplete();
+			drawLevelNum();
+			//win();
 		}
 	}
 
@@ -274,8 +423,6 @@ var G = ( function () {
 		PS.color(PS.ALL,PS.ALL, PS.COLOR_GREEN);
 		PS.border (PS.ALL,PS.ALL, 0);
 
-		DB.send();
-
 		PS.statusText("YOU WIN!");
 		PS.audioPlay("fx_tada");
 	}
@@ -284,14 +431,6 @@ var G = ( function () {
 	return {
 		init : function () {
 			"use strict"; // Do not remove this directive!
-			var complete = function ( user ) {
-				//PS.statusText( "Hi, " + user + "! Touch the number." );
-
-				PS.timerStart( 60, makeTP );
-				PS.timerStart( 6, moveTP );
-
-			};
-
 
 			PS.gridSize( GRID_X, GRID_Y ); // init grid
 			PS.border( PS.ALL, PS.ALL, 0 ); // no borders
@@ -310,6 +449,8 @@ var G = ( function () {
 
 
 			draw_map(); // draws walls
+			drawLives(); //draws hearts
+			drawLevelNum(); //draws the level you are on
 
 
 			loader = function ( data ) {
@@ -328,10 +469,10 @@ var G = ( function () {
 			PS.imageLoad("cartInit.png", loader);
 
 
+			//TODO Randomize and fix these times!
+			PS.timerStart( 60, makeTP );
+			PS.timerStart( 6, moveTP );
 
-			// change the call parameter to false to disable DB calls
-			DB.active( true);
-			DB.init( "HoardTp", complete ); // Initialize the API
 
 		},
 		keyDown : function ( key ) {
